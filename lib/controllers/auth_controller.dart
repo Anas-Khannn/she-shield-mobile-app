@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 
 class AuthController with ChangeNotifier {
@@ -29,12 +28,12 @@ class AuthController with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signup(String email, String password) async {
+  Future<void> signup(String email, String password, {String fullName = ''}) async {
     isLoading = true;
     error = null;
     notifyListeners();
     try {
-      final user = await _authService.signUp(email, password);
+      final user = await _authService.signUp(email, password, fullName: fullName);
       if (user != null) {
         isLoggedIn = true;
         _currentUser = user;

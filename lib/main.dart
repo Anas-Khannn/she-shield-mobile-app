@@ -9,8 +9,10 @@ import 'views/login_view.dart';
 import 'controllers/auth_controller.dart';
 
 Future<void> main() async {
-  await dotenv.load(fileName: ".env");
+  // Must be first — required before any Flutter/platform calls
   WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: ".env");
 
   // Initialize Supabase
   await Supabase.initialize(

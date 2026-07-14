@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:provider/provider.dart';
 import '../utils/app_colors.dart';
 import '../controllers/auth_controller.dart';
 import 'main_navigation.dart';
@@ -16,29 +17,48 @@ class _SignUpViewState extends State<SignUpView> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading = false;
 
   void _handleSignUp() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty || _nameController.text.isEmpty) {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all required fields')),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (mounted) {
+    if (password.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created successfully! Please sign in.')),
+        const SnackBar(content: Text('Password must be at least 8 characters')),
       );
-      Navigator.pop(context);
+      return;
+    }
+
+    final authController = context.read<AuthController>();
+    await authController.signup(email, password, fullName: name);
+
+    if (!mounted) return;
+
+    if (authController.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authController.error!), backgroundColor: Colors.redAccent),
+      );
+    } else {
+      // Signup succeeded — navigate to main app
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MainNavigation()),
+      );
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
+    final isLoading = context.watch<AuthController>().isLoading;
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.darkGradient),
