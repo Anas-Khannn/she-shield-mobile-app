@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment variables (contains secrets)
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime
+.pid
+.seed
+.pid.lock
+
+# Lock file (optional to commit, excluded here)
+package-lock.json
