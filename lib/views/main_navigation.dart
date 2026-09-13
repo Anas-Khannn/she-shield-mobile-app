@@ -15,50 +15,48 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeView(),
-    const ContactView(),
-    const SettingsView(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final screens = <Widget>[
+      HomeView(onNavigateToTab: (index) {
+        setState(() => _selectedIndex = index);
+      }),
+      const ContactView(),
+      const SettingsView(),
+    ];
+
     return Scaffold(
       body: Column(
         children: [
           const OfflineBanner(),
-          Expanded(child: _screens[_selectedIndex]),
+          Expanded(child: screens[_selectedIndex]),
         ],
       ),
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.surface,
-          border: Border(top: BorderSide(color: Colors.white.withAlpha(12))),
+          border: Border(top: BorderSide(color: AppColors.borderSubtle)),
         ),
-        child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: (index) => setState(() => _selectedIndex = index),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) =>
+              setState(() => _selectedIndex = index),
           backgroundColor: Colors.transparent,
-          elevation: 0,
-          selectedItemColor: AppColors.primary,
-          unselectedItemColor: AppColors.textMuted,
-          showSelectedLabels: true,
-          showUnselectedLabels: false,
-          type: BottomNavigationBarType.fixed,
-          items: const [
-            BottomNavigationBarItem(
+          indicatorColor: AppColors.primary.withAlpha(40),
+          destinations: const [
+            NavigationDestination(
               icon: Icon(Icons.shield_outlined),
-              activeIcon: Icon(Icons.shield),
+              selectedIcon: Icon(Icons.shield),
               label: 'Shield',
             ),
-            BottomNavigationBarItem(
+            NavigationDestination(
               icon: Icon(Icons.people_outline),
-              activeIcon: Icon(Icons.people),
+              selectedIcon: Icon(Icons.people),
               label: 'Contacts',
             ),
-            BottomNavigationBarItem(
+            NavigationDestination(
               icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
+              selectedIcon: Icon(Icons.settings),
               label: 'Settings',
             ),
           ],

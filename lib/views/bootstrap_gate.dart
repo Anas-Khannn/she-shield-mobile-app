@@ -1,122 +1,120 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../controllers/auth_controller.dart';
-import '../controllers/health_controller.dart';
 import '../services/bootstrap/app_bootstrap.dart';
-import '../services/errors/app_exception.dart';
+import '../utils/app_colors.dart';
+import '../widgets/app_error_view.dart';
 import 'login_view.dart';
+import 'main_navigation.dart';
+import 'splash_view.dart';
 
 /// Runs application initialization and mounts the real UI only afterwards.
+///
+/// Startup is fully work-driven — there is no artificial delay. The splash
+/// screen stays visible until:
+///
+/// 1. environment configuration is loaded and validated,
+/// 2. Supabase is initialized,
+/// 3. the persisted auth session is restored,
+/// 4. the authentication state decides the route (Home when logged in,
+///    Login otherwise).
 ///
 /// Initialization failures are shown on a dedicated retry screen instead of
 /// crashing the app with an uncaught exception.
 class BootstrapGate extends StatefulWidget {
-  const BootstrapGate({super.key, this.bootstrap});
+  const BootstrapGate({
+    super.key,
+    this.bootstrap,
+    required this.authController,
+  });
 
   /// Injectable for tests. When null, the real [AppBootstrap] is used.
   final Future<void> Function()? bootstrap;
+
+  /// App-wide auth state, owned above MaterialApp so every route can resolve
+  /// it. Startup restores the persisted session through this controller before
+  /// routing to the authenticated or unauthenticated screen.
+  final AuthController authController;
 
   @override
   State<BootstrapGate> createState() => _BootstrapGateState();
 }
 
+enum _BootstrapStatus {
+  initializing,
+  checkingSession,
+  ready,
+  failed,
+}
+
 class _BootstrapGateState extends State<BootstrapGate> {
-  late Future<void> _bootstrapFuture;
   final _bootstrap = AppBootstrap();
+
+  _BootstrapStatus _status = _BootstrapStatus.initializing;
+  Object? _error;
+  bool _authenticated = false;
 
   @override
   void initState() {
     super.initState();
-    _bootstrapFuture = _runBootstrap();
+    _initialize();
   }
 
-  Future<void> _runBootstrap() {
-    final custom = widget.bootstrap;
-    return custom != null ? custom() : _bootstrap.initialize();
-  }
-
-  void _retry() {
+  Future<void> _initialize() async {
     setState(() {
-      _bootstrapFuture = _runBootstrap();
+      _status = _BootstrapStatus.initializing;
+      _error = null;
     });
+
+    try {
+      final custom = widget.bootstrap;
+      if (custom != null) {
+        await custom();
+      } else {
+        await _bootstrap.initialize();
+      }
+
+      if (!mounted) return;
+
+      // Restore the persisted session before routing.
+      setState(() => _status = _BootstrapStatus.checkingSession);
+      await widget.authController.checkSession();
+
+      if (!mounted) return;
+      setState(() {
+        _authenticated = widget.authController.isLoggedIn;
+        _status = _BootstrapStatus.ready;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _status = _BootstrapStatus.failed;
+          _error = error;
+        });
+      }
+    }
   }
+
+  void _retry() => _initialize();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _bootstrapFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const _BootstrapSplash();
-        }
-        if (snapshot.hasError) {
-          return _BootstrapErrorView(
-            error: snapshot.error,
-            onRetry: _retry,
-          );
-        }
-        return MultiProvider(
-          providers: [
-            ChangeNotifierProvider(create: (_) => AuthController()),
-            ChangeNotifierProvider(create: (_) => HealthController()),
-          ],
-          child: const LoginView(),
-        );
-      },
-    );
-  }
-}
-
-class _BootstrapSplash extends StatelessWidget {
-  const _BootstrapSplash();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-  }
-}
-
-class _BootstrapErrorView extends StatelessWidget {
-  const _BootstrapErrorView({required this.error, required this.onRetry});
-
-  final Object? error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final error = this.error;
-    final message = error is AppException
-        ? error.userMessage
-        : 'The app could not start. Please try again.';
-
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_outlined, size: 56, color: Colors.white70),
-              const SizedBox(height: 16),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: onRetry,
-                child: const Text('RETRY'),
-              ),
-            ],
+    switch (_status) {
+      case _BootstrapStatus.initializing:
+      case _BootstrapStatus.checkingSession:
+        return const SplashView();
+      case _BootstrapStatus.failed:
+        return Scaffold(
+          body: Container(
+            decoration: const BoxDecoration(gradient: AppColors.darkGradient),
+            child: AppErrorView(
+              error: _error,
+              onRetry: _retry,
+            ),
           ),
-        ),
-      ),
-    );
+        );
+      case _BootstrapStatus.ready:
+        return _authenticated ? const MainNavigation() : const LoginView();
+    }
   }
 }

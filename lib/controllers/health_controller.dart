@@ -15,16 +15,27 @@ class HealthController extends ChangeNotifier {
 
   bool _isReachable = true;
   bool _isChecking = false;
+  bool _disposed = false;
 
   bool get isReachable => _isReachable;
   bool get isChecking => _isChecking;
 
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
   Future<void> checkHealth() async {
     _isChecking = true;
-    notifyListeners();
+    _notify();
     final reachable = await _health.isApiReachable();
     _isReachable = reachable;
     _isChecking = false;
-    notifyListeners();
+    _notify();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

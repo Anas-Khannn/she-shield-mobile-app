@@ -18,7 +18,11 @@ class _OfflineBannerState extends State<OfflineBanner> {
   @override
   void initState() {
     super.initState();
-    context.read<HealthController>().checkHealth();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<HealthController>().checkHealth();
+      }
+    });
   }
 
   @override
