@@ -5,7 +5,6 @@ import '../controllers/sos_controller.dart';
 import 'safety_timer_view.dart';
 import 'fake_call_view.dart';
 import '../services/location_service.dart';
-import 'package:geolocator/geolocator.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});

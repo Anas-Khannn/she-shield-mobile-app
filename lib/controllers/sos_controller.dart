@@ -12,7 +12,7 @@ class SOSController {
       final position = await LocationService.getCurrentLocation();
       
       // Vibrate immediately as SOS triggers
-      if (await Vibration.hasVibrator() ?? false) {
+      if (await Vibration.hasVibrator()) {
         Vibration.vibrate(pattern: [500, 1000, 500, 1000, 500, 1000, 500]);
       }
 

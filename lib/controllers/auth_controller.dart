@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+
 import '../services/auth_service.dart';
+import '../services/errors/app_exception.dart';
 
 class AuthController with ChangeNotifier {
-  final AuthService _authService = AuthService();
+  AuthController({AuthService? authService})
+      : _authService = authService ?? AuthService();
+
+  final AuthService _authService;
 
   bool isLoading = false;
   bool isLoggedIn = false;
@@ -21,8 +26,10 @@ class AuthController with ChangeNotifier {
         isLoggedIn = true;
         _currentUser = user;
       }
-    } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+    } on AppException catch (e) {
+      error = e.userMessage;
+    } catch (_) {
+      error = 'Something went wrong. Please try again.';
     }
     isLoading = false;
     notifyListeners();
@@ -38,8 +45,10 @@ class AuthController with ChangeNotifier {
         isLoggedIn = true;
         _currentUser = user;
       }
-    } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+    } on AppException catch (e) {
+      error = e.userMessage;
+    } catch (_) {
+      error = 'Something went wrong. Please try again.';
     }
     isLoading = false;
     notifyListeners();
@@ -56,6 +65,7 @@ class AuthController with ChangeNotifier {
     await _authService.signOut();
     isLoggedIn = false;
     _currentUser = null;
+    error = null;
     notifyListeners();
   }
 }
