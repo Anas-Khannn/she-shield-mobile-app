@@ -25,7 +25,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 100 });
 
 // Routes
-const authRoutes = require('./src/routes/auth');
+const authRoutes = require('./routes/auth');
 app.use('/auth', authLimiter, authRoutes);
 
 // Health check

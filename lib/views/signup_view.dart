@@ -95,8 +95,8 @@ class _SignUpViewState extends State<SignUpView> {
                   FadeInUp(
                     delay: const Duration(milliseconds: 400),
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleSignUp,
-                      child: _isLoading
+                      onPressed: isLoading ? null : _handleSignUp,
+                      child: isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
                           : const Text('CREATE ACCOUNT'),
                     ),
