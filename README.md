@@ -14,7 +14,7 @@ Built as a personal full-stack project to go beyond typical CRUD apps and work w
 - **Emergency Contacts** — Add, edit, and manage trusted contacts who get alerted during an SOS.
 - **Audio Recording** — Automatically records ambient audio during an SOS event and saves it locally as evidence.
 - **Authentication & Profile** — Email/password sign up with verification, login, token refresh, logout, forgot/reset password, and an editable profile (name, phone, avatar, date of birth, blood group, medical notes).
-- **Security-first backend** — Rate-limited auth endpoints, security headers, banned-user checks, email-verification gating, and an audit log of every auth event (sign-ups, logins, failed logins, password changes, token refreshes) with IP and user-agent capture.
+- **Security-first backend** — Rate-limited auth endpoints, security headers, banned-user checks, email-verification gating, validated input (types, lengths, formats) before anything hits Supabase, CORS that fails closed in production, an audit log of every auth event (sign-ups, logins, failed logins, password changes, token refreshes) with IP, user-agent, and sanitized metadata — plus row-level security policies for `profiles`.
 
 ---
 
@@ -87,9 +87,11 @@ she-shield-mobile-app/
 │   └── main.dart
 ├── backend/                    # Node.js/Express API
 │   ├── routes/                 # auth.js (signup/login/refresh/logout/me/...)
-│   ├── middleware/              # auth.js (requireAuth, requireEmailVerified, requireRole)
-│   ├── services/                # auditLog.js
-│   ├── utils/                   # supabaseClient.js
+│   ├── middleware/              # auth.js (requireAuth, requireEmailVerified, requireRole), validate.js
+│   ├── services/                # auditLog.js (with metadata redaction)
+│   ├── utils/                   # supabaseClient.js, corsConfig.js
+│   ├── supabase/                # rls.sql (row-level security policies)
+│   ├── test/                    # node --test suite (security, auth, rate-limit)
 │   └── server.js
 ├── android/ ios/ web/ linux/ macos/ windows/  # Flutter platform targets
 └── pubspec.yaml
@@ -111,7 +113,33 @@ she-shield-mobile-app/
 | PATCH  | `/auth/me`               | Update profile fields (requires verified email)   |
 | GET    | `/health`                | Health check                                      |
 
-Every auth event (sign-up, login, failed login, refresh, logout, password change) is written to an audit log with IP address and user agent.
+Every auth event (sign-up, login, failed login, refresh, logout, password change) is written to an audit log with IP address and user agent, with credential-shaped keys stripped from the stored metadata.
+
+### Security behaviour
+
+- **Input validation** — every request body is validated (types, lengths, formats:
+  email ≤254 chars, password 8–128 with upper/lower/digit, phone charset, ISO dates,
+  blood-group enum, http(s) URLs) in `backend/middleware/validate.js` before any
+  Supabase call.
+- **Identity** — always derived from the verified Bearer token (`req.user.id`),
+  never from a body `id`/`user_id`/`role`. `PATCH /auth/me` only writes allowlisted
+  profile fields scoped to the caller.
+- **CORS** — origins come from `ALLOWED_ORIGINS` (comma-separated). If unset in
+  production, **no** browser origin is allowed (fail-closed); non-production falls
+  back to `*`. No cookies are used, so CSRF doesn't apply.
+- **Rate limits** — auth routes 20 req/15 min, global API 100 req/min by default,
+  both configurable via `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX`,
+  `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`.
+- **Errors** — malformed JSON → 400, oversized bodies → 413, everything else stays
+  sanitized as `{ error, message }`; stack traces are only visible in non-production.
+- **RLS** — run `backend/supabase/rls.sql` in your Supabase project so users can
+  only select/insert/update their own `profiles` row (no delete). Defense in depth
+  behind the service-role API.
+- **Audit redaction** — `auditLog.js` drops keys matching password/token/secret/
+  authorization anywhere in the metadata and truncates oversized strings.
+
+See `docs/phase-8-backend-security-report.md` for the full threat model, endpoint
+matrix, changes, and deployment checklist.
 
 ---
 
@@ -135,11 +163,20 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ALLOWED_ORIGINS=http://localhost:3000
 APP_URL=http://localhost:3000
 PORT=3000
+# Optional rate-limit overrides (defaults shown)
+# AUTH_RATE_LIMIT_WINDOW_MS=900000
+# AUTH_RATE_LIMIT_MAX=20
+# API_RATE_LIMIT_WINDOW_MS=60000
+# API_RATE_LIMIT_MAX=100
 ```
+Then enable row-level security on `profiles` by running `backend/supabase/rls.sql`
+in the Supabase SQL editor.
+
 Run the server:
 ```bash
 npm run dev
 ```
+Tests: `npm test` (54 security/auth/validation tests).
 
 ### Flutter App Setup
 ```bash
@@ -168,6 +205,7 @@ Building She Shield end-to-end taught me a lot beyond just "making a CRUD app":
 - **API security fundamentals** — adding Helmet for secure headers, separate/stricter rate limits on auth routes vs general routes, and validating input server-side even though Supabase does some validation itself.
 - **Auditability matters for safety apps** — logging every auth event (including failed logins) with IP and user-agent so suspicious activity on an account can be traced later, since this is a safety-critical app.
 - **Role- and status-aware middleware** — writing reusable Express middleware (`requireAuth`, `requireEmailVerified`, `requireRole`) so routes can be gated by verification status, ban status, or role without repeating logic.
+- **Hardening is testable** — proving production security properties (fail-closed CORS, IDOR resistance, sanitized errors, rate-limit enforcement, audit redaction) with real integration tests that inject fake Supabase clients through small factory seams.
 - **Thinking about UX under stress** — features like the Safety Timer and Fake Call only work if they're fast and require minimal taps, which changed how I approached state management and screen design.
 - **Structuring a Flutter app for growth** — separating concerns cleanly into controllers, services, models, and views instead of putting logic directly in widgets, which made the SOS logic testable and reusable across screens.
 

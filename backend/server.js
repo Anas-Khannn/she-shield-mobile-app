@@ -5,6 +5,8 @@ const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const pkg        = require('./package.json');
 
+const { resolveAllowedOrigins } = require('./utils/corsConfig');
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -23,26 +25,45 @@ app.use(helmet({
     : false,
 }));
 
-// CORS — restrict origins via ALLOWED_ORIGINS (comma separated) in production.
+// CORS — browser origins must be explicitly allowlisted via ALLOWED_ORIGINS.
+// Production fails closed (no browser origin allowed) when the variable is
+// missing; the native mobile app authenticates with a Bearer header and is not
+// subject to browser same-origin policy. Credentials are never enabled because
+// the API uses token (not cookie) authentication.
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  origin(origin, callback) {
+    const allowed = resolveAllowedOrigins();
+    if (allowed.includes('*')) return callback(null, true);
+    if (!origin || allowed.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
 }));
 
-// Body parser
+// Body parser — small, bounded payloads. The API only exchanges JSON.
 app.use(express.json({ limit: '10kb' }));
 
-// Rate limiters
+// Read a positive-integer env override, falling back to a default.
+function limitFromEnv(name, fallback) {
+  const raw = process.env[name];
+  const parsed = Number.parseInt(raw, 10);
+  if (raw !== undefined && !Number.isNaN(parsed) && parsed > 0) return parsed;
+  return fallback;
+}
+
+// Rate limiters — sizes are configurable so high-traffic or CI environments
+// can adapt without code changes. Auth endpoints always get a strict limit.
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: limitFromEnv('AUTH_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  max: limitFromEnv('AUTH_RATE_LIMIT_MAX', 20),
   standardHeaders: true,
   legacyHeaders: false,
 });
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
+  windowMs: limitFromEnv('API_RATE_LIMIT_WINDOW_MS', 60 * 1000),
+  max: limitFromEnv('API_RATE_LIMIT_MAX', 100),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -51,11 +72,12 @@ const apiLimiter = rateLimit({
 // the 404 handler). Auth routes are additionally limited by authLimiter.
 app.use(apiLimiter);
 
-// Routes
-const authRoutes = require('./routes/auth');
-app.use('/auth', authLimiter, authRoutes);
+// Routes — the auth router factory returns a router wired to the real
+// Supabase clients by default.
+const createAuthRoutes = require('./routes/auth');
+app.use('/auth', authLimiter, createAuthRoutes());
 
-// Health check
+// Health check — intentionally reveals only safe operational information.
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -70,10 +92,28 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Not Found', message: `Route ${req.method} ${req.path} not found.` });
 });
 
-// Global error handler
+// Global error handler — client-facing errors are always sanitized.
+// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[Error]', err.message);
-  res.status(500).json({ error: 'Internal Server Error' });
+  // Malformed JSON body.
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON', message: 'Request body is not valid JSON.' });
+  }
+  // Payload larger than the configured limit.
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return res.status(413).json({ error: 'Payload Too Large', message: 'Request body exceeds the allowed size.' });
+  }
+  if (err.status && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ error: 'Bad Request', message: 'Invalid request.' });
+  }
+
+  if (!isProduction) {
+    // Stack traces are useful for developers only — never in production.
+    console.error('[Error]', err.stack || err.message);
+  } else {
+    console.error('[Error]', err.message);
+  }
+  return res.status(500).json({ error: 'Internal Server Error', message: 'An unexpected error occurred.' });
 });
 
 // Only listen when run directly so tests can import the app.
