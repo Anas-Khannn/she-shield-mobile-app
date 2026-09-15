@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/auth_scaffold.dart';
+import 'email_verification_view.dart';
 import 'forgot_password_view.dart';
 import 'main_navigation.dart';
 import 'signup_view.dart';
@@ -40,10 +41,21 @@ class _LoginViewState extends State<LoginView> {
 
     if (!mounted) return;
     if (authController.isLoggedIn) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainNavigation()),
-      );
+      if (authController.state == AuthState.unverified) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EmailVerificationView(
+              email: _emailController.text.trim(),
+            ),
+          ),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainNavigation()),
+        );
+      }
     } else if (authController.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

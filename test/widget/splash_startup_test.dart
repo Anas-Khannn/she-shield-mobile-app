@@ -44,7 +44,10 @@ void main() {
   testWidgets('routes to home when a persisted session is restored',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({
+      'access_token': 'tok',
+      'refresh_token': 'ref',
       'user_data': jsonEncode({'id': '1', 'email': 'a@b.com'}),
+      'email_verified': true,
     });
     await tester.pumpWidget(SheShieldApp(bootstrap: () async {}));
     await tester.pump();

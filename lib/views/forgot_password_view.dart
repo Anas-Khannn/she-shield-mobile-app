@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:provider/provider.dart';
 
+import '../controllers/auth_controller.dart';
 import '../utils/app_colors.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/auth_scaffold.dart';
@@ -16,6 +18,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   bool _isSent = false;
+  bool _isLoading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -23,13 +27,27 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     super.dispose();
   }
 
-  void _handleReset() {
+  Future<void> _handleReset() async {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _isSent = true);
-    // In a real app, a reset email request would be sent to the API here.
-    // For now, we show the success state immediately.
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final authController = context.read<AuthController>();
+    await authController.sendPasswordResetEmail(_emailController.text.trim());
+
+    if (!mounted) return;
+
+    final serverError = authController.error;
+    if (serverError != null) {
+      setState(() => _error = serverError);
+    } else {
+      setState(() => _isSent = true);
+    }
+    setState(() => _isLoading = false);
   }
 
   @override
@@ -85,11 +103,40 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 ),
               ),
               const SizedBox(height: 32),
+              if (_error != null) ...[
+                FadeIn(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.error.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.error.withAlpha(80),
+                      ),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               FadeInUp(
                 delay: const Duration(milliseconds: 100),
                 child: ElevatedButton(
-                  onPressed: _handleReset,
-                  child: const Text('SEND RESET LINK'),
+                  onPressed: _isLoading ? null : _handleReset,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('SEND RESET LINK'),
                 ),
               ),
             ] else ...[

@@ -41,6 +41,14 @@ router.post('/login', async (req, res) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    const isEmailNotConfirmed =
+      error.message?.toLowerCase().includes('email not confirmed');
+    if (isEmailNotConfirmed) {
+      return res.status(403).json({
+        error: 'Email Not Verified',
+        message: 'Your email has not been verified yet. Please check your inbox for the verification link.',
+      });
+    }
     await logAuthEvent(null, 'sign_in_failed', req, { email, reason: error.message });
     return res.status(401).json({ error: 'Authentication Failed', message: 'Invalid email or password.' });
   }

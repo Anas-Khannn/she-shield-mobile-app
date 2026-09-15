@@ -40,7 +40,12 @@ class _SheShieldAppState extends State<SheShieldApp> {
   @override
   void initState() {
     super.initState();
-    _authController = AuthController();
+    // The 401 callback is wired through AuthController → AuthService →
+    // ApiClient. Any request that fails with an unauthorized response clears
+    // the local session and sends the user back to login.
+    _authController = AuthController(
+      onUnauthorized: () => _authController.handleSessionExpired(),
+    );
     _healthController = HealthController();
     _safetyTimerController = SafetyTimerController();
 

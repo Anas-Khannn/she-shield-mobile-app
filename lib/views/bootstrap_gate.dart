@@ -76,9 +76,10 @@ class _BootstrapGateState extends State<BootstrapGate> {
 
       if (!mounted) return;
 
-      // Restore the persisted session before routing.
+      // Restore and validate the persisted session before routing. A session
+      // that cannot be validated (expired/revoked token) routes to login.
       setState(() => _status = _BootstrapStatus.checkingSession);
-      await widget.authController.checkSession();
+      await widget.authController.restoreSession();
 
       if (!mounted) return;
       setState(() {

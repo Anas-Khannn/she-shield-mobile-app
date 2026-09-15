@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/auth_scaffold.dart';
+import 'email_verification_view.dart';
 import 'main_navigation.dart';
 
 class SignUpView extends StatefulWidget {
@@ -48,6 +49,15 @@ class _SignUpViewState extends State<SignUpView> {
         SnackBar(
           content: Text(authController.error!),
           backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } else if (authController.state == AuthState.unverified) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EmailVerificationView(
+            email: _emailController.text.trim(),
+          ),
         ),
       );
     } else {

@@ -3,9 +3,28 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/errors/app_exception.dart';
 
-class AuthController with ChangeNotifier {
-  AuthController({AuthService? authService})
-      : _authService = authService ?? AuthService();
+/// The app-wide authentication state.
+enum AuthState {
+  /// No session restored yet (startup).
+  initial,
+
+  /// A session exists locally and is being validated against the backend.
+  checking,
+
+  /// Fully authenticated.
+  authenticated,
+
+  /// Authenticated but the email address is not verified yet.
+  unverified,
+
+  /// Signed out / session missing or invalid.
+  unauthenticated,
+}
+
+class AuthController extends ChangeNotifier {
+  AuthController({AuthService? authService, void Function()? onUnauthorized})
+      : _authService = authService ??
+            AuthService(onUnauthorized: onUnauthorized);
 
   final AuthService _authService;
 
@@ -13,59 +32,126 @@ class AuthController with ChangeNotifier {
   bool isLoggedIn = false;
   String? error;
 
+  AuthState _state = AuthState.initial;
+  AuthState get state => _state;
+
   Map<String, dynamic>? _currentUser;
   Map<String, dynamic>? get currentUser => _currentUser;
+
+  bool get isEmailVerified => _state == AuthState.authenticated;
 
   Future<void> login(String email, String password) async {
     isLoading = true;
     error = null;
+    _state = AuthState.checking;
     notifyListeners();
     try {
-      final user = await _authService.signIn(email, password);
-      if (user != null) {
-        isLoggedIn = true;
-        _currentUser = user;
-      }
+      final session = await _authService.signIn(email, password);
+      isLoggedIn = true;
+      _currentUser = session.user;
+      _state = session.emailConfirmed
+          ? AuthState.authenticated
+          : AuthState.unverified;
     } on AppException catch (e) {
       error = e.userMessage;
+      _state = AuthState.unauthenticated;
     } catch (_) {
       error = 'Something went wrong. Please try again.';
+      _state = AuthState.unauthenticated;
     }
     isLoading = false;
     notifyListeners();
   }
 
-  Future<void> signup(String email, String password, {String fullName = ''}) async {
+  Future<void> signup(String email, String password,
+      {String fullName = ''}) async {
     isLoading = true;
     error = null;
+    _state = AuthState.checking;
     notifyListeners();
     try {
-      final user = await _authService.signUp(email, password, fullName: fullName);
-      if (user != null) {
+      final session = await _authService.signUp(email, password,
+          fullName: fullName);
+      if (session != null && session.sessionActive) {
         isLoggedIn = true;
-        _currentUser = user;
+        _currentUser = session.user;
+        _state = session.emailConfirmed
+            ? AuthState.authenticated
+            : AuthState.unverified;
+      } else {
+        // Signup returned no usable session — backend answered with a "check
+        // your email" response. Treat as pending verification.
+        isLoggedIn = false;
+        _currentUser = null;
+        _state = AuthState.unverified;
       }
     } on AppException catch (e) {
       error = e.userMessage;
+      _state = AuthState.unauthenticated;
     } catch (_) {
       error = 'Something went wrong. Please try again.';
+      _state = AuthState.unauthenticated;
     }
     isLoading = false;
     notifyListeners();
   }
 
-  Future<void> checkSession() async {
-    final user = await _authService.getCurrentUser();
-    isLoggedIn = user != null;
-    _currentUser = user;
+  /// Restores a persisted session and verifies it against the backend.
+  Future<void> restoreSession() async {
+    _state = AuthState.checking;
+    isLoading = true;
+    notifyListeners();
+    try {
+      final session = await _authService.validateSession();
+      if (session != null) {
+        isLoggedIn = true;
+        _currentUser = session.user;
+        _state = session.emailConfirmed
+            ? AuthState.authenticated
+            : AuthState.unverified;
+      } else {
+        isLoggedIn = false;
+        _currentUser = null;
+        _state = AuthState.unauthenticated;
+      }
+    } on AppException catch (e) {
+      isLoggedIn = false;
+      _currentUser = null;
+      error = e.userMessage;
+      _state = AuthState.unauthenticated;
+    }
+    isLoading = false;
     notifyListeners();
   }
 
   Future<void> logout() async {
-    await _authService.signOut();
-    isLoggedIn = false;
-    _currentUser = null;
-    error = null;
+    isLoading = true;
     notifyListeners();
+    await _authService.signOut();
+    _currentUser = null;
+    isLoggedIn = false;
+    error = null;
+    _state = AuthState.unauthenticated;
+    isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> handleSessionExpired() async {
+    await _authService.clearLocalSession();
+    _currentUser = null;
+    isLoggedIn = false;
+    _state = AuthState.unauthenticated;
+    notifyListeners();
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    error = null;
+    try {
+      await _authService.sendPasswordResetEmail(email);
+    } on AppException catch (e) {
+      error = e.userMessage;
+    } catch (_) {
+      error = 'Failed to send reset link. Please try again.';
+    }
   }
 }

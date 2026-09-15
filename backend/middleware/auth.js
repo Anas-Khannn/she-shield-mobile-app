@@ -10,9 +10,7 @@ async function requireAuth(req, res, next) {
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(accessToken);
 
   if (error || !user) {
-    console.log('AUTH ERROR:', error?.message);
-    console.log('SERVICE KEY set?', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-    return res.status(401).json({ error: 'Unauthorized', message: error?.message });
+    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid or expired token.' });
   }
 
   const { data: profile } = await supabaseAdmin

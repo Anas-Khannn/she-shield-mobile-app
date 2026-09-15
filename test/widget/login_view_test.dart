@@ -23,7 +23,7 @@ AuthController _authController({required bool success}) {
     httpClient: MockClient((request) async {
       if (request.url.path.endsWith('/auth/login') && success) {
         return http.Response(
-          '{"access_token":"tok","refresh_token":"ref","user":{"id":"1","email":"a@b.com"}}',
+          '{"access_token":"tok","refresh_token":"ref","user":{"id":"1","email":"a@b.com","email_confirmed_at":"2024-01-01T00:00:00Z"}}',
           200,
         );
       }
