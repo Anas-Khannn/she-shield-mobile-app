@@ -45,9 +45,17 @@ class SOSController {
   static Future<bool> _defaultLaunchUri(Uri uri) =>
       launchUrl(uri, mode: LaunchMode.externalApplication);
 
+  /// Distress vibration pattern: short bursts with pauses in between.
   static Future<void> _defaultVibrate() => Vibration.vibrate(
         pattern: const [500, 1000, 500, 1000, 500, 1000, 500],
       );
+
+  /// Message sent when the current location could not be retrieved.
+  ///
+  /// We deliberately do **not** fabricate coordinates — contacts are told
+  /// that no location is available instead of receiving a fake map link.
+  static const String locationUnavailableMessage =
+      'EMERGENCY! I need help. My current location could not be retrieved.';
 
   /// Runs the full SOS sequence and streams progress through [onStatusChanged].
   ///
@@ -69,7 +77,8 @@ class SOSController {
 
     emit();
 
-    // 1. Location
+    // 1. Location — a fix is optional. If it fails, the contacts/call
+    //    actions below still run with a location-unavailable message.
     Position? position;
     try {
       position = await _getCurrentLocation();
@@ -84,9 +93,16 @@ class SOSController {
 
     // 2. Vibration
     try {
-      if (await _hasVibrator()) await _vibrate();
-      results[SosOperation.vibration] =
-          const SosOperationResult(SosOperationState.success);
+      if (await _hasVibrator()) {
+        await _vibrate();
+        results[SosOperation.vibration] =
+            const SosOperationResult(SosOperationState.success);
+      } else {
+        results[SosOperation.vibration] = const SosOperationResult(
+          SosOperationState.failure,
+          message: 'Vibration unavailable on this device',
+        );
+      }
     } catch (_) {
       results[SosOperation.vibration] = const SosOperationResult(
         SosOperationState.failure,
@@ -95,30 +111,30 @@ class SOSController {
     }
     emit();
 
-    // 3. Contacts + SMS
-    List<ContactModel> contacts = const [];
-    try {
-      contacts = await _getContacts();
-    } catch (_) {
-      contacts = const [];
-    }
+    // 3. Contacts + SMS — every contact is attempted on its own; one
+    //    unreachable contact never stops the next from being notified.
+    final List<ContactModel> contacts = await _loadContacts();
     if (contacts.isEmpty) {
       results[SosOperation.contacts] = const SosOperationResult(
         SosOperationState.failure,
         message: 'No emergency contacts set up',
       );
     } else {
-      final message = position != null
-          ? _emergencySms(position.latitude, position.longitude)
-          : 'EMERGENCY! I need help.';
+      final message = _emergencyMessage(position);
       var allSent = true;
+      var attempted = 0;
       for (final contact in contacts) {
+        if (!_isValidPhoneNumber(contact.phoneNumber)) {
+          allSent = false;
+          continue;
+        }
+        attempted++;
         final smsUri = Uri.parse(
           'sms:${contact.phoneNumber}?body=${Uri.encodeComponent(message)}',
         );
         try {
-          if (await _canLaunchUri(smsUri)) {
-            await _launchUri(smsUri);
+          if (await _canLaunchUri(smsUri) && await _launchUri(smsUri)) {
+            // Contact notified successfully.
           } else {
             allSent = false;
           }
@@ -126,21 +142,27 @@ class SOSController {
           allSent = false;
         }
       }
+      final noneReachable = attempted == 0;
       results[SosOperation.contacts] = SosOperationResult(
         allSent ? SosOperationState.success : SosOperationState.failure,
-        message: allSent ? null : 'Contact could not be reached',
+        message: noneReachable
+            ? 'Contact notifications failed'
+            : allSent
+                ? null
+                : 'Some contacts could not be reached',
       );
     }
     emit();
 
     // 4. Emergency call to the primary contact
-    if (contacts.isEmpty) {
+    final primary = _primaryContact(contacts);
+    if (primary == null) {
       results[SosOperation.call] = const SosOperationResult(
         SosOperationState.failure,
-        message: 'No emergency contacts set up',
+        message: 'No primary emergency contact',
       );
     } else {
-      final callUri = Uri.parse('tel:${contacts.first.phoneNumber}');
+      final callUri = Uri.parse('tel:${primary.phoneNumber}');
       var callLaunched = false;
       try {
         callLaunched = await _canLaunchUri(callUri) && await _launchUri(callUri);
@@ -154,7 +176,8 @@ class SOSController {
     }
     emit();
 
-    // 5. Background audio recording
+    // 5. Background audio recording — isolated so a mic failure never
+    //    blocks the call/vibration/notification actions that already ran.
     var recording = false;
     try {
       recording = await _startRecording();
@@ -170,8 +193,31 @@ class SOSController {
     return SosStatus(results);
   }
 
-  String _emergencySms(double latitude, double longitude) {
-    final mapsUrl = LocationService.getGoogleMapsUrl(latitude, longitude);
+  Future<List<ContactModel>> _loadContacts() async {
+    try {
+      return await _getContacts();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// The primary emergency contact is simply the first saved one.
+  ContactModel? _primaryContact(List<ContactModel> contacts) {
+    for (final contact in contacts) {
+      if (_isValidPhoneNumber(contact.phoneNumber)) return contact;
+    }
+    return null;
+  }
+
+  bool _isValidPhoneNumber(String phoneNumber) {
+    final digits = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
+    return digits.length >= 7 && digits.length <= 15;
+  }
+
+  String _emergencyMessage(Position? position) {
+    if (position == null) return locationUnavailableMessage;
+    final mapsUrl =
+        LocationService.getGoogleMapsUrl(position.latitude, position.longitude);
     return 'EMERGENCY! I need help. My location: $mapsUrl';
   }
 }

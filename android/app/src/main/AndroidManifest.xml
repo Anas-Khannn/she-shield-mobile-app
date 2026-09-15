@@ -1,4 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GPS location for SOS -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Audio recording for SOS evidence -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
+
+    <!-- Distress vibration pattern -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <application
         android:label="she_sheild"
         android:name="${applicationName}"
@@ -40,6 +53,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- SMS composer used by the SOS contact notification action -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="sms"/>
+        </intent>
+        <!-- Phone dialer used by the SOS primary-contact call action -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
         </intent>
     </queries>
 </manifest>

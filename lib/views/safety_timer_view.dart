@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../controllers/sos_controller.dart';
 import '../models/sos_status.dart';
+import '../services/sos_coordinator.dart';
 import '../utils/app_colors.dart';
 import '../widgets/sos_status_sheet.dart';
 
@@ -13,7 +13,7 @@ class SafetyTimerView extends StatefulWidget {
 }
 
 class _SafetyTimerViewState extends State<SafetyTimerView> {
-  final _sosController = SOSController();
+  final _coordinator = SOSCoordinator();
 
   int _secondsRemaining = 0;
   Timer? _timer;
@@ -51,7 +51,7 @@ class _SafetyTimerViewState extends State<SafetyTimerView> {
       _isRunning = false;
       _sosTriggering = true;
     });
-    final status = await _sosController.triggerSos();
+    final status = await _coordinator.triggerSos();
     if (!mounted) return;
     setState(() => _sosTriggering = false);
     _showStatusSheet(status);

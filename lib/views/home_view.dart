@@ -5,8 +5,10 @@ import 'package:geolocator/geolocator.dart';
 import '../controllers/contact_controller.dart';
 import '../controllers/sos_controller.dart';
 import '../models/contact_model.dart';
+import '../models/sos_flow_state.dart';
 import '../models/sos_status.dart';
 import '../services/location_service.dart';
+import '../services/sos_coordinator.dart';
 import '../utils/app_colors.dart';
 import '../utils/app_dimens.dart';
 import '../widgets/sos_status_sheet.dart';
@@ -26,6 +28,7 @@ class HomeView extends StatefulWidget {
     this.fetchLocation,
     this.fetchContacts,
     this.sosController,
+    this.sosCoordinator,
   });
 
   /// Lets the home screen switch the bottom navigation tab (e.g. to Contacts).
@@ -41,6 +44,12 @@ class HomeView extends StatefulWidget {
   /// Injectable SOS runner so tests can avoid the device plugins.
   final SOSController? sosController;
 
+  /// Injectable emergency coordinator so tests can observe lifecycle state.
+  ///
+  /// When both [sosController] and [sosCoordinator] are provided, the
+  /// coordinator wins.
+  final SOSCoordinator? sosCoordinator;
+
   @override
   State<HomeView> createState() => _HomeViewState();
 }
@@ -48,15 +57,17 @@ class HomeView extends StatefulWidget {
 enum _LocationStatus { checking, ready, failure }
 
 class _HomeViewState extends State<HomeView> {
-  late final SOSController _sosController =
-      widget.sosController ?? SOSController();
+  late final SOSCoordinator _coordinator = widget.sosCoordinator ??
+      SOSCoordinator(sosController: widget.sosController ?? SOSController());
   final _sosStatusNotifier = ValueNotifier<SosStatus>(SosStatus.initial());
 
   _LocationStatus _locationStatus = _LocationStatus.checking;
   double? _latitude;
   double? _longitude;
-  bool _sosRunning = false;
+  SosFlowState _flowState = SosFlowState.idle;
   int _contactCount = 0;
+
+  bool get _sosRunning => _flowState.isActive;
 
   @override
   void initState() {
@@ -101,9 +112,11 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _triggerSos() async {
+    // The coordinator ignores duplicate triggers while active, but we also
+    // keep the UI responsive and never spawn an overlapping emergency event.
     if (_sosRunning) return;
     setState(() {
-      _sosRunning = true;
+      _flowState = SosFlowState.starting;
       _sosStatusNotifier.value = SosStatus.initial();
     });
 
@@ -118,18 +131,22 @@ class _HomeViewState extends State<HomeView> {
         statusListenable: _sosStatusNotifier,
         onRetry: () {
           Navigator.pop(context);
+          _coordinator.reset();
           _triggerSos();
         },
         onClose: () => Navigator.pop(context),
       ),
     );
 
-    final status = await _sosController.triggerSos(
+    final status = await _coordinator.triggerSos(
+      onStateChanged: (state) {
+        if (mounted) setState(() => _flowState = state);
+      },
       onStatusChanged: (s) => _sosStatusNotifier.value = s,
     );
     _sosStatusNotifier.value = status;
     if (mounted) {
-      setState(() => _sosRunning = false);
+      setState(() => _flowState = _coordinator.flowState);
     }
   }
 
