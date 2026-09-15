@@ -6,6 +6,7 @@ import '../models/contact_model.dart';
 import '../models/sos_status.dart';
 import '../services/location_service.dart';
 import '../services/media_service.dart';
+import '../services/permission_service.dart';
 import 'contact_controller.dart';
 
 /// Runs the emergency SOS sequence and reports the outcome of *each* step.
@@ -26,13 +27,16 @@ class SOSController {
     Future<bool> Function()? hasVibrator,
     Future<void> Function()? vibrate,
     Future<bool> Function()? startRecording,
+    Future<bool> Function()? requestMicrophonePermission,
   })  : _getCurrentLocation = getCurrentLocation ?? LocationService.getCurrentLocation,
         _getContacts = getContacts ?? ContactController.getContacts,
         _canLaunchUri = canLaunchUri ?? canLaunchUrl,
         _launchUri = launchUri ?? _defaultLaunchUri,
         _hasVibrator = hasVibrator ?? Vibration.hasVibrator,
         _vibrate = vibrate ?? _defaultVibrate,
-        _startRecording = startRecording ?? MediaService.startRecording;
+        _startRecording = startRecording ?? MediaService.startRecording,
+        _requestMicrophonePermission =
+            requestMicrophonePermission ?? _defaultRequestMicrophonePermission;
 
   final Future<Position?> Function() _getCurrentLocation;
   final Future<List<ContactModel>> Function() _getContacts;
@@ -41,9 +45,16 @@ class SOSController {
   final Future<bool> Function() _hasVibrator;
   final Future<void> Function() _vibrate;
   final Future<bool> Function() _startRecording;
+  final Future<bool> Function() _requestMicrophonePermission;
 
   static Future<bool> _defaultLaunchUri(Uri uri) =>
       launchUrl(uri, mode: LaunchMode.externalApplication);
+
+  /// Requests microphone access contextually (right before recording).
+  /// Returns `true` only when the permission is granted or already held.
+  static Future<bool> _defaultRequestMicrophonePermission() async {
+    return (await PermissionService().requestMicrophone()).isGranted;
+  }
 
   /// Distress vibration pattern: short bursts with pauses in between.
   static Future<void> _defaultVibrate() => Vibration.vibrate(
@@ -176,17 +187,26 @@ class SOSController {
     }
     emit();
 
-    // 5. Background audio recording — isolated so a mic failure never
-    //    blocks the call/vibration/notification actions that already ran.
+    // 5. Ambient audio recording — foreground-only during the SOS session.
+    //    Microphone access is requested contextually; if it is denied (or the
+    //    OS refuses to show a prompt again) the failure is isolated so it can
+    //    never block the call/vibration/notification actions that already ran.
+    //    NOTE: recording is NOT background-audio — the app must stay in the
+    //    foreground for capture to continue (see platform audit docs).
     var recording = false;
+    var recordingReason = 'Recording unavailable (microphone)';
     try {
-      recording = await _startRecording();
+      if (await _requestMicrophonePermission()) {
+        recording = await _startRecording();
+      } else {
+        recordingReason = 'Microphone permission not granted';
+      }
     } catch (_) {
       recording = false;
     }
     results[SosOperation.recording] = SosOperationResult(
       recording ? SosOperationState.success : SosOperationState.failure,
-      message: recording ? null : 'Recording unavailable (microphone)',
+      message: recording ? null : recordingReason,
     );
     emit();
 

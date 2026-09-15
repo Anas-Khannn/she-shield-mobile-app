@@ -14,6 +14,15 @@ class MediaService {
   ///
   /// Returns `true` on success, `false` when permission is missing,
   /// already recording, or an error occurs.  Never throws.
+  ///
+  /// Platform limitations (see `docs/phase-7-platform-permissions-audit-report.md`):
+  /// - Recording is **foreground-only**. No iOS `audio` background mode is
+  ///   configured and no Android foreground service is registered, so capture
+  ///   is NOT guaranteed to continue after the app is backgrounded.
+  /// - On iOS the OS suspends the audio session without the background audio
+  ///   capability; on Android the process may be killed in the background.
+  /// - Permission granted at the OS level does not guarantee the microphone
+  ///   hardware/session is available (could be in use by another app).
   static Future<bool> startRecording() async {
     if (_isRecording) {
       debugPrint('MediaService: recording already in progress');

@@ -21,6 +21,7 @@ SOSController _allOkController() => SOSController(
       hasVibrator: () async => true,
       vibrate: () async {},
       startRecording: () async => true,
+      requestMicrophonePermission: () async => true,
     );
 
 void main() {
@@ -55,6 +56,7 @@ void main() {
         hasVibrator: () async => true,
         vibrate: () async {},
         startRecording: () async => true,
+        requestMicrophonePermission: () async => true,
       );
       final coordinator = SOSCoordinator(sosController: controller);
 
@@ -71,6 +73,7 @@ void main() {
         launchUri: (_) async => false,
         hasVibrator: () async => false,
         startRecording: () async => false,
+        requestMicrophonePermission: () async => false,
       );
       final coordinator = SOSCoordinator(sosController: controller);
 
@@ -105,6 +108,7 @@ void main() {
         hasVibrator: () async => true,
         vibrate: () async {},
         startRecording: () async => true,
+        requestMicrophonePermission: () async => true,
       );
       final coordinator = SOSCoordinator(sosController: controller);
 
@@ -136,6 +140,7 @@ void main() {
         hasVibrator: () async => true,
         vibrate: () async {},
         startRecording: () async => true,
+        requestMicrophonePermission: () async => true,
       );
       final coordinator = SOSCoordinator(sosController: controller);
 
@@ -160,6 +165,7 @@ void main() {
         hasVibrator: () async => true,
         vibrate: () async {},
         startRecording: () async => true,
+        requestMicrophonePermission: () async => true,
       );
       final coordinator = SOSCoordinator(sosController: controller);
 

@@ -29,6 +29,7 @@ SOSController _controller({
   Future<bool> Function()? hasVibrator,
   Future<void> Function()? vibrate,
   Future<bool> Function()? startRecording,
+  Future<bool> Function()? requestMicrophonePermission,
 }) {
   return SOSController(
     getCurrentLocation: getCurrentLocation ?? () async => _position(),
@@ -38,6 +39,7 @@ SOSController _controller({
     hasVibrator: hasVibrator ?? () async => true,
     vibrate: vibrate ?? () async {},
     startRecording: startRecording ?? () async => true,
+    requestMicrophonePermission: requestMicrophonePermission ?? () async => true,
   );
 }
 
@@ -201,6 +203,61 @@ void main() {
       expect(status.resultOf(SosOperation.vibration).isFailure, isTrue);
       expect(status.resultOf(SosOperation.recording).isFailure, isTrue);
       expect(status.resultOf(SosOperation.call).isSuccess, isTrue);
+    });
+
+    test('microphone permission denied fails only the recording action',
+        () async {
+      var recordingAttempted = false;
+      final controller = _controller(
+        requestMicrophonePermission: () async => false,
+        startRecording: () async {
+          recordingAttempted = true;
+          return true;
+        },
+      );
+
+      final status = await controller.triggerSos();
+
+      expect(recordingAttempted, isFalse, reason: 'recording must not start');
+      expect(status.resultOf(SosOperation.recording).isFailure, isTrue);
+      expect(
+        status.resultOf(SosOperation.recording).message,
+        'Microphone permission not granted',
+      );
+      expect(status.resultOf(SosOperation.call).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.contacts).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.location).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.vibration).isSuccess, isTrue);
+    });
+
+    test('microphone permission granted leads to a recording attempt',
+        () async {
+      var recordingAttempted = false;
+      final controller = _controller(
+        requestMicrophonePermission: () async => true,
+        startRecording: () async {
+          recordingAttempted = true;
+          return true;
+        },
+      );
+
+      final status = await controller.triggerSos();
+
+      expect(recordingAttempted, isTrue);
+      expect(status.resultOf(SosOperation.recording).isSuccess, isTrue);
+    });
+
+    test('microphone permission request throwing is isolated', () async {
+      final controller = _controller(
+        requestMicrophonePermission: () async =>
+            throw Exception('permission channel down'),
+      );
+
+      final status = await controller.triggerSos();
+
+      expect(status.resultOf(SosOperation.recording).isFailure, isTrue);
+      expect(status.resultOf(SosOperation.call).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.vibration).isSuccess, isTrue);
     });
 
     test('all actions failing is reported as an overall failed run', () async {

@@ -25,6 +25,7 @@ SOSController _fakeSosController() {
     hasVibrator: () async => true,
     vibrate: () async {},
     startRecording: () async => true,
+    requestMicrophonePermission: () async => true,
   );
 }
 

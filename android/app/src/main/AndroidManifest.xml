@@ -1,16 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- GPS location for SOS -->
+    <!-- GPS location for SOS. Precise + coarse: geolocator requires both on
+         Android and only while-in-use is used (no background location). -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
-    <!-- Audio recording for SOS evidence -->
+    <!-- Audio recording for SOS evidence (runtime-granted at SOS time). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"/>
 
-    <!-- Distress vibration pattern -->
+    <!-- Distress vibration pattern. -->
     <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <!-- Deliberately ABSENT permissions (least privilege):
+         - CALL_PHONE / SEND_SMS: the app opens the dialer (ACTION_DIAL) and
+           the SMS composer (ACTION_SENDTO sms:) — neither requires these.
+         - ACCESS_BACKGROUND_LOCATION: SOS reads location only while in use.
+         - POST_NOTIFICATIONS: no notification feature exists.
+         - WRITE_EXTERNAL_STORAGE: audio is written to app-private storage.
+    -->
 
     <application
         android:label="she_sheild"
