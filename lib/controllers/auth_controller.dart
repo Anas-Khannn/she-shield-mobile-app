@@ -41,6 +41,7 @@ class AuthController extends ChangeNotifier {
   bool get isEmailVerified => _state == AuthState.authenticated;
 
   Future<void> login(String email, String password) async {
+    if (isLoading) return; // Duplicate-submission protection.
     isLoading = true;
     error = null;
     _state = AuthState.checking;
@@ -65,6 +66,7 @@ class AuthController extends ChangeNotifier {
 
   Future<void> signup(String email, String password,
       {String fullName = ''}) async {
+    if (isLoading) return; // Duplicate-submission protection.
     isLoading = true;
     error = null;
     _state = AuthState.checking;
@@ -98,6 +100,7 @@ class AuthController extends ChangeNotifier {
 
   /// Restores a persisted session and verifies it against the backend.
   Future<void> restoreSession() async {
+    if (isLoading) return; // Prevent overlapping startup restores.
     _state = AuthState.checking;
     isLoading = true;
     notifyListeners();
@@ -125,6 +128,7 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    if (isLoading) return; // Prevent repeated concurrent logout.
     isLoading = true;
     notifyListeners();
     await _authService.signOut();
@@ -145,6 +149,8 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
+    if (isLoading) return; // Duplicate-submission protection.
+    isLoading = true;
     error = null;
     try {
       await _authService.sendPasswordResetEmail(email);
@@ -152,6 +158,8 @@ class AuthController extends ChangeNotifier {
       error = e.userMessage;
     } catch (_) {
       error = 'Failed to send reset link. Please try again.';
+    } finally {
+      isLoading = false;
     }
   }
 }

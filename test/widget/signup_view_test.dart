@@ -64,6 +64,11 @@ Future<void> _fillAndSubmit(WidgetTester tester) async {
     find.widgetWithText(TextField, 'Password'),
     'Password123',
   );
+  await tester.enterText(
+    find.widgetWithText(TextField, 'Confirm Password'),
+    'Password123',
+  );
+  await tester.ensureVisible(find.text('CREATE ACCOUNT'));
   await tester.tap(find.text('CREATE ACCOUNT'));
   await tester.pump();
   await tester.pump();
@@ -145,6 +150,11 @@ void main() {
         find.widgetWithText(TextField, 'Password'),
         'alllowercase1',
       );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Confirm Password'),
+        'alllowercase1',
+      );
+      await tester.ensureVisible(find.text('CREATE ACCOUNT'));
       await tester.tap(find.text('CREATE ACCOUNT'));
       await tester.pumpAndSettle();
 
@@ -170,6 +180,11 @@ void main() {
         find.widgetWithText(TextField, 'Password'),
         'Ab1',
       );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Confirm Password'),
+        'Ab1',
+      );
+      await tester.ensureVisible(find.text('CREATE ACCOUNT'));
       await tester.tap(find.text('CREATE ACCOUNT'));
       await tester.pumpAndSettle();
 

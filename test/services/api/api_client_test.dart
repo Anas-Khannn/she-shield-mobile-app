@@ -154,17 +154,23 @@ void main() {
         );
       });
 
-      test('401 calls onUnauthorized callback', () async {
+      test('401 calls onUnauthorized when refresh is unavailable', () async {
         var unauthorizedCalled = false;
-        final client = _makeClient(
-          MockClient((request) async {
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
             return http.Response('{"message":"Unauthorized"}', 401);
           }),
+          tokenProvider: () async => 'stale-token',
           onUnauthorized: () => unauthorizedCalled = true,
         );
 
         await expectLater(
-          client.get('/auth/me'),
+          client.get('/auth/me', requiresAuth: true),
           throwsA(isA<AuthenticationException>()),
         );
         expect(unauthorizedCalled, isTrue);
@@ -266,6 +272,154 @@ void main() {
           () => client.post('/auth/login', body: {}),
           throwsA(isA<ValidationException>()),
         );
+      });
+    });
+
+    group('401 refresh handling', () {
+      test('refreshes once then retries the original request', () async {
+        var access = 'token-v1';
+        final authHeaders = <String?>[];
+        var meCalls = 0;
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
+            meCalls++;
+            authHeaders.add(request.headers['Authorization']);
+            if (request.headers['Authorization'] == 'Bearer token-v1') {
+              return http.Response('{"message":"expired"}', 401);
+            }
+            return http.Response('{"profile":{"id":"1"}}', 200);
+          }),
+          tokenProvider: () async => access,
+          onRefreshToken: () async {
+            access = 'token-v2';
+            return true;
+          },
+        );
+
+        final response = await client.get('/auth/me', requiresAuth: true);
+
+        expect(response.data, {'profile': {'id': '1'}});
+        expect(meCalls, 2);
+        expect(authHeaders, ['Bearer token-v1', 'Bearer token-v2']);
+        expect(access, 'token-v2');
+      });
+
+      test('a second 401 after refresh does not loop (bounded retry)',
+          () async {
+        var refreshCount = 0;
+        var meCalls = 0;
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
+            meCalls++;
+            return http.Response('{"message":"expired"}', 401);
+          }),
+          tokenProvider: () async => 'token-v1',
+          onRefreshToken: () async {
+            refreshCount++;
+            return true;
+          },
+        );
+
+        await expectLater(
+          client.get('/auth/me', requiresAuth: true),
+          throwsA(isA<AuthenticationException>()),
+        );
+
+        // Exactly ONE refresh and ONE retry — the loop is bounded.
+        expect(refreshCount, 1);
+        expect(meCalls, 2);
+      });
+
+      test('failed refresh notifies unauthorized / clears the session',
+          () async {
+        var unauthorizedCalled = 0;
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
+            return http.Response('{"message":"expired"}', 401);
+          }),
+          tokenProvider: () async => 'token-v1',
+          onRefreshToken: () async => false,
+          onUnauthorized: () => unauthorizedCalled++,
+        );
+
+        await expectLater(
+          client.get('/auth/me', requiresAuth: true),
+          throwsA(isA<AuthenticationException>()),
+        );
+        expect(unauthorizedCalled, 1);
+      });
+
+      test('a throwing refresh degrades to the failed-refresh path',
+          () async {
+        var unauthorizedCalled = 0;
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
+            return http.Response('{"message":"expired"}', 401);
+          }),
+          tokenProvider: () async => 'token-v1',
+          onRefreshToken: () async => throw Exception('unexpected'),
+          onUnauthorized: () => unauthorizedCalled++,
+        );
+
+        await expectLater(
+          client.get('/auth/me', requiresAuth: true),
+          throwsA(isA<AuthenticationException>()),
+        );
+        expect(unauthorizedCalled, 1);
+      });
+
+      test('concurrent 401s share a single refresh', () async {
+        var access = 'token-v1';
+        var refreshCount = 0;
+        final client = ApiClient(
+          config: const ApiConfig(
+            baseUrl: 'http://localhost:3000',
+            environment: AppEnvironment.development,
+            timeout: Duration(seconds: 5),
+          ),
+          httpClient: MockClient((request) async {
+            if (request.headers['Authorization'] == 'Bearer token-v1') {
+              return http.Response('{"message":"expired"}', 401);
+            }
+            return http.Response('{"ok":true}', 200);
+          }),
+          tokenProvider: () async => access,
+          onRefreshToken: () async {
+            refreshCount++;
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            access = 'token-v2';
+            return true;
+          },
+        );
+
+        final results = await Future.wait([
+          client.get('/resource-a', requiresAuth: true),
+          client.get('/resource-b', requiresAuth: true),
+        ]);
+
+        expect(results.every((r) => r.isSuccess), isTrue);
+        // Both 401s were healed by a single shared refresh — no storm.
+        expect(refreshCount, 1);
       });
     });
 

@@ -28,11 +28,21 @@ class AuthSession {
 /// Controllers talk to this service, which in turn uses the central
 /// [ApiClient]. No widget performs raw HTTP calls.
 class AuthService {
-  AuthService({ApiClient? apiClient, void Function()? onUnauthorized})
-      : _apiClient = apiClient ??
-            ApiClient(tokenProvider: readAccessToken, onUnauthorized: onUnauthorized);
+  AuthService({ApiClient? apiClient, void Function()? onUnauthorized}) {
+    _apiClient = apiClient ??
+        ApiClient(
+          tokenProvider: readAccessToken,
+          onRefreshToken: refreshAccessToken,
+          onUnauthorized: onUnauthorized,
+        );
+  }
 
-  final ApiClient _apiClient;
+  late final ApiClient _apiClient;
+
+  /// Remembers the in-flight refresh so concurrent callers (e.g. several
+  /// requests that hit 401 at once) share a single token refresh instead of
+  /// stampeding the auth endpoint.
+  Future<bool>? _refreshInFlight;
 
   /// Reads the persisted access token from local storage.
   static Future<String?> readAccessToken() async {
@@ -177,7 +187,7 @@ class AuthService {
       return null;
     }
 
-    final refreshed = await _refresh(refreshToken);
+    final refreshed = await refreshAccessToken();
     final newToken = refreshed
         ? prefs.getString('access_token')
         : null;
@@ -200,7 +210,21 @@ class AuthService {
     }
   }
 
-  Future<bool> _refresh(String refreshToken) async {
+  /// Refreshes the persisted session using the stored refresh token.
+  ///
+  /// Single-flight: concurrent callers share one network refresh. Returns true
+  /// when a new access token was persisted. Never throws — failures return
+  /// false so callers can decide how to degrade.
+  Future<bool> refreshAccessToken() {
+    return _refreshInFlight ??= _performRefresh().whenComplete(() {
+      _refreshInFlight = null;
+    });
+  }
+
+  Future<bool> _performRefresh() async {
+    final prefs = await SharedPreferences.getInstance();
+    final refreshToken = prefs.getString('refresh_token');
+    if (refreshToken == null || refreshToken.isEmpty) return false;
     try {
       final response = await _apiClient.post(
         '/auth/refresh',
@@ -210,7 +234,7 @@ class AuthService {
       if (data is! Map<String, dynamic>) return false;
       final accessToken = data['access_token'];
       if (accessToken is! String || accessToken.isEmpty) return false;
-      _persistTokens(
+      await _persistTokens(
         accessToken,
         data['refresh_token'] as String?,
         data['expires_at'] as int?,

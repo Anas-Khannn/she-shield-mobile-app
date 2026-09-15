@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:she_shield/controllers/sos_controller.dart';
 import 'package:she_shield/models/contact_model.dart';
@@ -334,6 +335,23 @@ void main() {
       expect(snapshots.length, greaterThanOrEqualTo(5));
       expect(snapshots.last.allSucceeded, isTrue);
       expect(finalStatus.allSucceeded, isTrue);
+    });
+  });
+
+  group('SOS independence from authentication', () {
+    test('runs end-to-end with an empty (logged-out) session', () async {
+      SharedPreferences.setMockInitialValues({});
+      expect(SharedPreferences.getInstance(), completes);
+
+      final status = await _controller().triggerSos();
+
+      // SOS must never depend on an auth session: with zero tokens in
+      // storage every operation still succeeds.
+      expect(status.allSucceeded, isTrue);
+      expect(status.resultOf(SosOperation.location).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.contacts).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.call).isSuccess, isTrue);
+      expect(status.resultOf(SosOperation.recording).isSuccess, isTrue);
     });
   });
 }

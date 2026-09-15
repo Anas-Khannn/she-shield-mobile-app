@@ -27,16 +27,25 @@ class ApiClient {
     ApiConfig? config,
     http.Client? httpClient,
     Future<String?> Function()? tokenProvider,
+    Future<bool> Function()? onRefreshToken,
     void Function()? onUnauthorized,
   })  : _config = config ?? ApiConfig.fromEnv(),
         _httpClient = httpClient ?? http.Client(),
         _tokenProvider = tokenProvider,
+        _onRefreshToken = onRefreshToken,
         _onUnauthorized = onUnauthorized;
 
   final ApiConfig _config;
   final http.Client _httpClient;
   final Future<String?> Function()? _tokenProvider;
+
+  /// Attempts to refresh the session. Returns true when a new access token
+  /// was persisted. Must be safe to call concurrently — a single refresh is
+  /// shared between all in-flight callers (no refresh storm).
+  final Future<bool> Function()? _onRefreshToken;
   final void Function()? _onUnauthorized;
+
+  Future<bool>? _refreshInFlight;
 
   ApiConfig get config => _config;
 
@@ -124,6 +133,9 @@ class ApiClient {
         .replace(queryParameters: queryParameters);
 
     var attempt = 0;
+    // A 401 may trigger a single session refresh followed by exactly one
+    // retry. After that we accept the failure - no loop is possible.
+    var tokenRefreshed = false;
     while (true) {
       attempt++;
       // A fresh request is needed for every attempt — http requests can only
@@ -140,6 +152,19 @@ class ApiClient {
         final data = await _decode(response);
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return ApiResponse(statusCode: response.statusCode, data: data);
+        }
+        if (requiresAuth && response.statusCode == 401 && !tokenRefreshed) {
+          // The access token was rejected. Try ONE bounded refresh, then
+          // retry this request a single time.
+          tokenRefreshed = true;
+          if (await _refreshSession()) {
+            continue;
+          }
+        }
+        if (requiresAuth && response.statusCode == 401) {
+          // Refresh failed (or was already attempted) — the session is
+          // really dead. Notify so the client can clear state and re-auth.
+          _onUnauthorized?.call();
         }
         throw _exceptionFor(response.statusCode, data);
       } on ApiException {
@@ -222,6 +247,28 @@ class ApiClient {
     return method == 'GET' && retryOnNetworkError && attempt < maxRetries;
   }
 
+  /// Refreshes the session once, sharing the in-flight operation between all
+  /// callers so concurrent 401s never trigger a refresh storm.
+  Future<bool> _refreshSession() async {
+    final onRefreshToken = _onRefreshToken;
+    if (onRefreshToken == null) return false;
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _runRefresh(onRefreshToken);
+    _refreshInFlight = future.whenComplete(() => _refreshInFlight = null);
+    return future;
+  }
+
+  Future<bool> _runRefresh(Future<bool> Function() onRefreshToken) async {
+    try {
+      return await onRefreshToken();
+    } catch (_) {
+      // A refresh failure must degrade to the "session unusable" path, never
+      // to an unhandled exception mid-request.
+      return false;
+    }
+  }
+
   Future<void> _backoff(int attempt) {
     return Future<void>.delayed(Duration(milliseconds: 200 * attempt));
   }
@@ -241,7 +288,9 @@ class ApiClient {
               : serverMessage,
         );
       case 401:
-        _onUnauthorized?.call();
+        // 401s on authenticated requests are handled higher up in _send
+        // (bounded refresh + single retry). Anonymous 401s (bad login,
+        // rejected refresh token) surface here without touching session state.
         return AuthenticationException(
           statusCode: statusCode,
           message: serverMessage.isEmpty
