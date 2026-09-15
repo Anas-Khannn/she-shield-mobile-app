@@ -157,6 +157,12 @@ class _SignUpViewState extends State<SignUpView> {
                     if (value.length < 8) {
                       return 'Password must be at least 8 characters';
                     }
+                    final hasUpper = value.contains(RegExp(r'[A-Z]'));
+                    final hasLower = value.contains(RegExp(r'[a-z]'));
+                    final hasDigit = value.contains(RegExp(r'[0-9]'));
+                    if (!hasUpper || !hasLower || !hasDigit) {
+                      return 'Use upper & lower case letters and a number';
+                    }
                     return null;
                   },
                   onFieldSubmitted: (_) => _handleSignUp(),

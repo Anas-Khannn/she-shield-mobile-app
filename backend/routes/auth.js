@@ -4,6 +4,16 @@ const { supabase, supabaseAdmin } = require('../utils/supabaseClient');
 const { requireAuth, requireEmailVerified } = require('../middleware/auth');
 const { logAuthEvent } = require('../services/auditLog');
 
+// A single source of truth for acceptable passwords, shared by signup and
+// password reset: at least 8 characters with upper, lower, and a digit.
+const PASSWORD_RULE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+const PASSWORD_MESSAGE =
+  'Password must be at least 8 characters with upper and lower case letters and a number.';
+
+function isValidPassword(password) {
+  return typeof password === 'string' && PASSWORD_RULE.test(password);
+}
+
 // POST /auth/signup
 router.post('/signup', async (req, res) => {
   const { email, password, full_name, phone_number } = req.body;
@@ -11,8 +21,8 @@ router.post('/signup', async (req, res) => {
   if (!email || !password || !full_name) {
     return res.status(400).json({ error: 'Validation Error', message: 'email, password, and full_name are required.' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Validation Error', message: 'Password must be at least 8 characters.' });
+  if (!isValidPassword(password)) {
+    return res.status(400).json({ error: 'Validation Error', message: PASSWORD_MESSAGE });
   }
 
   const { data, error } = await supabase.auth.signUp({
@@ -109,8 +119,8 @@ router.post('/forgot-password', async (req, res) => {
 // POST /auth/reset-password
 router.post('/reset-password', requireAuth, async (req, res) => {
   const { new_password } = req.body;
-  if (!new_password || new_password.length < 8) {
-    return res.status(400).json({ error: 'Validation Error', message: 'new_password must be at least 8 characters.' });
+  if (!isValidPassword(new_password)) {
+    return res.status(400).json({ error: 'Validation Error', message: PASSWORD_MESSAGE });
   }
 
   const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, { password: new_password });

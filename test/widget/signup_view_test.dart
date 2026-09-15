@@ -62,7 +62,7 @@ Future<void> _fillAndSubmit(WidgetTester tester) async {
   );
   await tester.enterText(
     find.widgetWithText(TextField, 'Password'),
-    'password123',
+    'Password123',
   );
   await tester.tap(find.text('CREATE ACCOUNT'));
   await tester.pump();
@@ -126,6 +126,55 @@ void main() {
 
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('rejects a weak password (no uppercase)',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(_app(_authController(emailRequired: true)));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Full Name'),
+        'Jane Doe',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Email'),
+        'j@b.com',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Password'),
+        'alllowercase1',
+      );
+      await tester.tap(find.text('CREATE ACCOUNT'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Use upper & lower case letters and a number'),
+          findsOneWidget);
+      expect(find.byType(EmailVerificationView), findsNothing);
+    });
+
+    testWidgets('rejects a weak password (too short)',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(_app(_authController(emailRequired: true)));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Full Name'),
+        'Jane Doe',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Email'),
+        'j@b.com',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Password'),
+        'Ab1',
+      );
+      await tester.tap(find.text('CREATE ACCOUNT'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Password must be at least 8 characters'),
+          findsOneWidget);
     });
   });
 }

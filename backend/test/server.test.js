@@ -69,3 +69,37 @@ test('protected route returns 401 without a bearer token', async () => {
   const body = await res.json();
   assert.equal(body.error, 'Unauthorized');
 });
+
+test('signup rejects a weak password (no uppercase)', async () => {
+  const res = await fetch(`${baseUrl}/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'a@b.com', password: 'alllowercase1', full_name: 'Test' }),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, 'Validation Error');
+  assert.ok(body.message.includes('upper'));
+});
+
+test('signup rejects a weak password (too short)', async () => {
+  const res = await fetch(`${baseUrl}/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'a@b.com', password: 'Ab1', full_name: 'Test' }),
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, 'Validation Error');
+});
+
+test('forgot-password does not leak whether the email exists', async () => {
+  const res = await fetch(`${baseUrl}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'unknown@example.com' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.message.includes('If an account exists'));
+});
